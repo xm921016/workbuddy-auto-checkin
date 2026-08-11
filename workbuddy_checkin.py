@@ -51,6 +51,7 @@ LOCAL_AUTH_FILE = os.path.join(
 )
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkin_log.jsonl")
+BANNER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "banner_state.json")
 
 
 def log(msg):
@@ -66,6 +67,69 @@ def append_log(record: dict):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as e:
         log(f"WARN 写日志失败: {e}")
+
+
+def check_banner(token, uid):
+    """
+    检查活动横幅（banner），判断是否出现新的可参与活动。
+    返回 (new_activity, info)：
+      - (True, info)   发现新活动（与上次不同）
+      - (False, None)  无变化或无活动
+      - (None, msg)    检查异常
+    状态记录在 banner_state.json，避免重复提醒。
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-Domain": X_DOMAIN,
+        "X-User-Id": uid,
+        "X-IDE-Type": "WorkBuddy",
+        "X-IDE-Name": "WorkBuddy",
+        "X-Product": "WorkBuddy",
+        "User-Agent": UA,
+    }
+    try:
+        resp = requests.get(API_BASE + "/activity/workbuddy/banner",
+                            headers=headers, timeout=20)
+        body = resp.json()
+        if resp.status_code != 200 or body.get("code") != 0 or not body.get("data"):
+            log(f"WARN banner 接口无数据: HTTP {resp.status_code}")
+            return None, f"banner 接口无数据: HTTP {resp.status_code}"
+        raw = body["data"]
+        activity_id = str(raw.get("activity_id", "") or "")
+        content = raw.get("banner_content", "") or ""
+        action = raw.get("action", {}) or {}
+        online = raw.get("activity_online_status", False)
+        # 可自动领取的活动特征：有 action 且 action 是 open_url/switch_model 之外可操作类型，
+        # 或 status 非 None 且 online。这里只做通用记录，是否值得提醒由监控脚本判断。
+        info = {
+            "activity_id": activity_id,
+            "banner_content": content,
+            "action": action,
+            "online": online,
+            "detail_link": raw.get("detail_link", "") or "",
+        }
+        last = {}
+        if os.path.exists(BANNER_STATE_FILE):
+            try:
+                with open(BANNER_STATE_FILE, "r", encoding="utf-8") as f:
+                    last = json.load(f)
+            except Exception:
+                last = {}
+        last_id = str(last.get("activity_id", "") or "")
+        # 更新状态
+        state = {"activity_id": activity_id, "banner_content": content,
+                 "action": action, "checked_at": datetime.datetime.now().isoformat()}
+        with open(BANNER_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        if not activity_id or activity_id == last_id:
+            log(f"banner 无新活动（当前: {content[:40] or '(空)'}）")
+            return False, None
+        log(f"发现新活动横幅: {content}")
+        return True, info
+    except Exception as e:
+        log(f"ERROR banner 检查异常: {e}")
+        return None, str(e)
 
 
 def get_token():
@@ -144,6 +208,7 @@ def send_email(subject, body, config=None):
 def main():
     parser = argparse.ArgumentParser(description="WorkBuddy 每日自动签到")
     parser.add_argument("--check-only", action="store_true", help="只查询签到状态，不领取")
+    parser.add_argument("--check-banner", action="store_true", help="检查活动横幅是否有新活动（不领取）")
     args = parser.parse_args()
 
     token, uid, source = get_token()
@@ -152,6 +217,20 @@ def main():
         append_log({"event": "no_token", "ok": False, "msg": "no token found"})
         sys.exit(1)
     log(f"token 来源: {source} | uid: {uid or '(未提供)'}")
+
+    # 0. 活动横幅检查模式
+    if args.check_banner:
+        new_activity, info = check_banner(token, uid)
+        if new_activity is None:
+            log("banner 检查异常")
+            append_log({"event": "banner_error", "ok": False, "msg": info})
+            sys.exit(2)
+        if new_activity:
+            print(f"NEW_ACTIVITY: {json.dumps(info, ensure_ascii=False)}", flush=True)
+            append_log({"event": "banner_new", "ok": True, "info": info})
+            sys.exit(10)  # 10 = 发现新活动
+        append_log({"event": "banner_nochange", "ok": True})
+        sys.exit(0)
 
     # 1. 查询签到状态（正确接口：checkin-activity-status；checkin-status 仅作兜底）
     try:

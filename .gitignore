@@ -7,6 +7,7 @@ __pycache__/
 # 日志
 *.log
 checkin_log.jsonl
+banner_state.json
 logs/
 
 # 本地配置（含 SMTP 密码，绝不入库）
