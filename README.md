@@ -35,10 +35,19 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 |---|---|
 | `WB_ACCESS_TOKEN` | 登录 accessToken（从本地 auth 文件获取） |
 | `WB_USER_ID` | 用户 uid（可选） |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | SMTP 发信配置（如 QQ 邮箱 smtp.qq.com:465） |
-| `MAIL_TO` | 通知收件邮箱 |
+
+> 邮件告警无需 SMTP：由本地 WorkBuddy 自动化（每天 10:00）检查云端运行结果，失败/未运行时通过 WorkBuddy 智能邮箱（agent-mail）发送告警到收件邮箱。
 
 默认每天 09:10（北京时间）自动运行；可在 Actions 页面手动触发（workflow_dispatch）。
+
+## 邮件告警（不运行时提醒）
+
+如果 GitHub Actions 签到未运行或运行失败（如 token 过期），本地 WorkBuddy 自动化任务「WorkBuddy 签到监控告警」会检测到并通过智能邮箱发邮件提醒，内容包括：
+- 日期与最近运行状态
+- 运行链接（可点击查看日志）
+- 失败原因与修复建议（如更新 `WB_ACCESS_TOKEN` Secret）
+
+前置条件：在 WorkBuddy「更多 - 我的邮箱」开通智能邮箱（免费）。
 
 ## Token 失效处理
 
