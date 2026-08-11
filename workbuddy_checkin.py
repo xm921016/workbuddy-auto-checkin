@@ -114,13 +114,17 @@ def send_email(subject, body, config=None):
     """通过 SMTP 发送邮件（失败不抛异常，只记录）"""
     cfg = config or {}
     host = cfg.get("smtp_host") or os.environ.get("SMTP_HOST", "")
-    port = int(cfg.get("smtp_port") or os.environ.get("SMTP_PORT", "465"))
     user = cfg.get("smtp_user") or os.environ.get("SMTP_USER", "")
     password = cfg.get("smtp_pass") or os.environ.get("SMTP_PASS", "")
     to = cfg.get("mail_to") or os.environ.get("MAIL_TO", "")
     if not (host and user and password and to):
         log("WARN 邮件配置不完整，跳过发送")
         return False
+    port_str = cfg.get("smtp_port") or os.environ.get("SMTP_PORT", "")
+    try:
+        port = int(port_str) if port_str else 465
+    except (TypeError, ValueError):
+        port = 465
     try:
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"] = Header(subject, "utf-8")
