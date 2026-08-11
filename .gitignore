@@ -23,6 +23,9 @@ token*.txt
 # 本地调研临时目录
 _research/
 
+# WorkBuddy 项目数据目录（含工作日志/记忆，不进仓库）
+.workbuddy/
+
 # IDE
 .vscode/
 .idea/
