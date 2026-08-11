@@ -153,10 +153,15 @@ def main():
         sys.exit(1)
     log(f"token 来源: {source} | uid: {uid or '(未提供)'}")
 
-    # 1. 查询签到状态
+    # 1. 查询签到状态（正确接口：checkin-activity-status；checkin-status 仅作兜底）
     try:
-        code, status = api_post("/billing/meter/checkin-status", token, uid)
-        log(f"checkin-status -> HTTP {code}, code={status.get('code')}")
+        code, status = api_post("/billing/meter/checkin-activity-status", token, uid)
+        log(f"checkin-activity-status -> HTTP {code}, code={status.get('code')}")
+        if code != 200 or status.get("code") != 0:
+            # 兜底：尝试旧接口
+            log("WARN 活动接口异常，尝试 checkin-status 兜底")
+            code, status = api_post("/billing/meter/checkin-status", token, uid)
+            log(f"checkin-status -> HTTP {code}, code={status.get('code')}")
         if code != 200 or status.get("code") != 0:
             log(f"ERROR 查询状态失败: {json.dumps(status, ensure_ascii=False)[:300]}")
             append_log({"event": "status_fail", "ok": False, "msg": status})
@@ -175,8 +180,12 @@ def main():
         "active": data.get("active", False),
         "today_checked_in": data.get("today_checked_in", False),
         "streak_days": data.get("streak_days", 0),
+        "daily_credit": data.get("daily_credit", 0),
+        "today_credit": data.get("today_credit", 0),
         "total_credits": data.get("total_credits", 0),
         "activity_name": data.get("activity_name", ""),
+        "start_time": data.get("start_time", ""),
+        "end_time": data.get("end_time", ""),
         "claim_button_text": data.get("claim_button_text", ""),
         "action_button": data.get("action_button", {}),
     }
