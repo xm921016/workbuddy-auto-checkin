@@ -44,7 +44,9 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 **每天成功签到 → 不发邮件；未成功签到 → 发邮件说明原因。**
 
-本地 WorkBuddy 自动化任务「WorkBuddy 签到监控告警」每天 10:00 运行，通过智能邮箱（agent-mail）发送：
+本地 WorkBuddy 自动化任务「WorkBuddy 签到监控与活动提醒」每天 10:00 运行两步检查：
+
+**第一步 · 签到检查**（通过智能邮箱 agent-mail 发送）：
 
 | 当天情况 | 邮件行为 |
 |---|---|
@@ -52,6 +54,16 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 | 签到活动未激活（active=false） | 发「ℹ️ 今日活动未激活」说明邮件 |
 | 活动激活但未签到（云端失败/未运行） | 发「⚠️ 签到未运行/失败」告警邮件（含原因与修复建议） |
 | 本地查询异常（token 失效等） | 发「⚠️ 签到监控异常」邮件 |
+
+**第二步 · 新活动监控**（`python workbuddy_checkin.py --check-banner`）：
+
+| 退出码 | 含义 | 邮件行为 |
+|---|---|---|
+| 10 | 发现新活动横幅 | 发「🎉 新活动提醒」邮件（含活动内容/类型/链接） |
+| 0 | 无新活动 | 不发邮件 |
+| 其他 | 检查异常 | 发「⚠️ 活动监控异常」邮件 |
+
+banner 状态记录在本地 `banner_state.json`（已加入 .gitignore，不提交仓库），只有 activity_id 变化才触发提醒，避免重复邮件。
 
 前置条件：在 WorkBuddy「更多 - 我的邮箱」开通智能邮箱（免费，已开通）。
 
