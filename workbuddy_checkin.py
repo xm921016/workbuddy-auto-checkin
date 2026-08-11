@@ -187,6 +187,9 @@ def main():
     if not data.get("active", False):
         log("INFO 当前签到活动未激活（active=false），跳过领取")
         append_log({"event": "inactive", "ok": True, "summary": summary})
+        # 用户要求：没成功签到就发邮件说明原因
+        send_email("ℹ️ WorkBuddy 签到：今日活动未激活",
+                   f"今日签到活动当前未激活，未能领取积分。\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}")
         sys.exit(0)
 
     if data.get("today_checked_in", False):
@@ -202,14 +205,16 @@ def main():
         if code == 200 and result.get("code") == 0:
             log("✅ 签到成功！")
             append_log({"event": "success", "ok": True, "data": result.get("data"), "summary": summary})
-            send_email("✅ WorkBuddy 每日签到成功",
-                       f"签到成功！\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n响应: {json.dumps(result, ensure_ascii=False)[:500]}")
+            # 用户要求：成功签到不发邮件
             sys.exit(0)
         else:
             # 已签到/活动未开始等业务错误码
             msg = result.get("msg", "")
             log(f"INFO 领取未成功(可能已签到或未开放): {msg}")
             append_log({"event": "claim_skip", "ok": True, "code": result.get("code"), "msg": msg})
+            # 用户要求：没成功签到就发邮件说明原因
+            send_email("⚠️ WorkBuddy 签到：领取未成功",
+                       f"领取每日签到未成功，原因：{msg}\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}")
             sys.exit(0)
     except Exception as e:
         log(f"ERROR 领取异常: {e}")
