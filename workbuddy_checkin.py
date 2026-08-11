@@ -132,6 +132,38 @@ def check_banner(token, uid):
         return None, str(e)
 
 
+def build_banner_email_body(info: dict) -> str:
+    """根据 banner 信息生成新活动提醒邮件正文"""
+    action = info.get("action", {}) or {}
+    action_type = str(action.get("type", "") or "")
+    action_label = str(action.get("label", "") or "")
+    type_map = {
+        "switch_model": "模型福利（免费切换/限免模型）",
+        "open_url": "可参与活动（需打开链接参与）",
+        "open_activity": "可参与活动（需打开链接参与）",
+        "receive_gift": "可领取礼包",
+    }
+    type_desc = type_map.get(action_type, "其他类型（请到 WorkBuddy 客户端查看）")
+    if action_type in ("open_url", "open_activity"):
+        manual = "需要人工参与：请打开详情链接或 WorkBuddy 客户端按提示操作"
+    elif action_type == "switch_model":
+        manual = "无需人工参与：为模型福利，通常自动生效"
+    else:
+        manual = "无法自动判断：请到 WorkBuddy 客户端查看该活动详情"
+    detail = info.get("detail_link", "") or "（无）"
+    return (
+        "发现新的 WorkBuddy 活动横幅！\n\n"
+        f"活动内容: {info.get('banner_content', '') or '(空)'}\n"
+        f"活动ID: {info.get('activity_id', '') or '(无)'}\n"
+        f"动作类型: {type_desc}（{action_type or '(空)'}）\n"
+        f"操作按钮: {action_label or '(无)'}\n"
+        f"活动在线: {'是' if info.get('online') else '否'}\n"
+        f"详情链接: {detail}\n\n"
+        f"是否需人工参与: {manual}\n\n"
+        f"时间: {datetime.datetime.now()}"
+    )
+
+
 def get_token():
     """获取 token：环境变量优先，其次本地登录态文件"""
     token = os.environ.get("WB_ACCESS_TOKEN", "").strip()
@@ -224,10 +256,13 @@ def main():
         if new_activity is None:
             log("banner 检查异常")
             append_log({"event": "banner_error", "ok": False, "msg": info})
+            send_email("⚠️ WorkBuddy 活动监控异常",
+                       f"检查活动横幅时发生异常:\n{info}\n时间: {datetime.datetime.now()}")
             sys.exit(2)
         if new_activity:
             print(f"NEW_ACTIVITY: {json.dumps(info, ensure_ascii=False)}", flush=True)
             append_log({"event": "banner_new", "ok": True, "info": info})
+            send_email("🎉 WorkBuddy 新活动提醒", build_banner_email_body(info))
             sys.exit(10)  # 10 = 发现新活动
         append_log({"event": "banner_nochange", "ok": True})
         sys.exit(0)

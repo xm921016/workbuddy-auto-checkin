@@ -7,8 +7,8 @@ __pycache__/
 # 日志
 *.log
 checkin_log.jsonl
-banner_state.json
 logs/
+# banner 状态需入库持久化（云端去重用），不再忽略
 
 # 本地配置（含 SMTP 密码，绝不入库）
 config.local.json
