@@ -23,6 +23,7 @@ Token 来源（按优先级）:
     python workbuddy_checkin.py --check-only   # 只查询不领取
 """
 import argparse
+import base64
 import datetime
 import json
 import os
@@ -52,6 +53,8 @@ LOCAL_AUTH_FILE = os.path.join(
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkin_log.jsonl")
 BANNER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "banner_state.json")
+# refresh token 缓存文件（云端工作区临时文件，已 gitignore，绝不入库）
+REFRESH_TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".refresh_token")
 
 
 def log(msg):
@@ -164,6 +167,95 @@ def build_banner_email_body(info: dict) -> str:
     )
 
 
+def decode_jwt_exp(token):
+    """从 JWT 中解码过期时间（秒级时间戳），失败返回 None"""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        info = json.loads(base64.urlsafe_b64decode(payload))
+        return info.get("exp")
+    except Exception:
+        return None
+
+
+def try_refresh_token(refresh_tok, uid):
+    """
+    用 refresh token 调 /v2/plugin/auth/token/refresh 换新 token（已实测调通）。
+    返回 (True, auth_dict) 或 (False, err_msg)。
+    """
+    headers = {
+        "X-Refresh-Token": refresh_tok,
+        "X-Auth-Refresh-Source": "plugin",
+        "Content-Type": "application/json",
+        "X-Domain": X_DOMAIN,
+        "User-Agent": UA,
+    }
+    if uid:
+        headers["X-User-Id"] = uid
+    try:
+        resp = requests.post(API_BASE + "/plugin/auth/token/refresh",
+                             headers=headers, json={}, timeout=20)
+        body = resp.json()
+    except Exception as e:
+        return False, f"请求异常: {e}"
+    if resp.status_code != 200 or not body.get("data") or not body["data"].get("accessToken"):
+        return False, f"HTTP {resp.status_code}: {json.dumps(body, ensure_ascii=False)[:300]}"
+    return True, body["data"]
+
+
+def load_refresh_token():
+    """读取 refresh token：缓存文件优先，其次环境变量 WB_REFRESH_TOKEN。返回 (token, source)"""
+    if os.path.exists(REFRESH_TOKEN_FILE):
+        try:
+            with open(REFRESH_TOKEN_FILE, "r", encoding="utf-8") as f:
+                tok = f.read().strip()
+            if tok:
+                return tok, "cache"
+        except Exception:
+            pass
+    tok = os.environ.get("WB_REFRESH_TOKEN", "").strip()
+    if tok:
+        return tok, "env"
+    return "", ""
+
+
+def save_refresh_token(tok):
+    """持久化最新 refresh token（供云端缓存、下次运行使用）"""
+    try:
+        with open(REFRESH_TOKEN_FILE, "w", encoding="utf-8") as f:
+            f.write(tok)
+        return True
+    except Exception as e:
+        log(f"WARN 保存 refresh token 失败: {e}")
+        return False
+
+
+def get_access_token():
+    """
+    获取有效 access token（自动续期优先）：
+    1. 有 refresh token -> 调用刷新接口换新 access token（并持久化新的 refresh token）
+    2. 刷新失败或没有 refresh token -> 退回 WB_ACCESS_TOKEN / 本地登录态文件
+    返回 (token, uid, source)
+    """
+    refresh_tok, rt_source = load_refresh_token()
+    if refresh_tok:
+        uid = os.environ.get("WB_USER_ID", "").strip()
+        ok, result = try_refresh_token(refresh_tok, uid)
+        if ok:
+            new_access = result.get("accessToken", "")
+            new_refresh = result.get("refreshToken", "")
+            if new_refresh:
+                save_refresh_token(new_refresh)
+            if new_access:
+                days = (result.get("refreshExpiresIn") or 0) // 86400
+                log(f"✅ token 自动续期成功（来源 {rt_source}，新 refresh 有效期约 {days} 天）")
+                return new_access, uid, "refresh"
+        else:
+            log(f"WARN token 自动续期失败（来源 {rt_source}）: {result}")
+    # 退回原逻辑（环境变量 WB_ACCESS_TOKEN 或本地登录态）
+    return get_token()
+
+
 def get_token():
     """获取 token：环境变量优先，其次本地登录态文件"""
     token = os.environ.get("WB_ACCESS_TOKEN", "").strip()
@@ -243,12 +335,27 @@ def main():
     parser.add_argument("--check-banner", action="store_true", help="检查活动横幅是否有新活动（不领取）")
     args = parser.parse_args()
 
-    token, uid, source = get_token()
+    token, uid, source = get_access_token()
     if not token:
-        log("ERROR 未找到 token（环境变量 WB_ACCESS_TOKEN 或本地登录态文件均无）")
+        log("ERROR 未找到 token（自动续期失败且 WB_ACCESS_TOKEN/本地登录态均无）")
         append_log({"event": "no_token", "ok": False, "msg": "no token found"})
         sys.exit(1)
     log(f"token 来源: {source} | uid: {uid or '(未提供)'}")
+
+    # token 到期兜底提醒：自动续期正常时新 token 有 60 天，不会触发；仅续期失效/未配置时才提醒
+    exp = decode_jwt_exp(token)
+    if exp:
+        days_left = (exp - int(time.time())) // 86400
+        if days_left <= 7:
+            log(f"WARN token 剩余 {days_left} 天，发送到期提醒")
+            append_log({"event": "token_expiring", "ok": True, "days_left": days_left})
+            send_email("⚠️ WorkBuddy Token 即将过期",
+                       f"WorkBuddy 登录 token 即将过期（剩余 {days_left} 天）。\n\n"
+                       f"自动续期未能完成或未启用。解决办法：\n"
+                       f"1. 打开 WorkBuddy 客户端确认已登录（会自动刷新本地会话）\n"
+                       f"2. 若云端未配置 WB_REFRESH_TOKEN，联系助手更新 GitHub Secret\n\n"
+                       f"当前 token 到期时间: {datetime.datetime.fromtimestamp(exp).strftime('%Y-%m-%d %H:%M')}\n"
+                       f"发送时间: {datetime.datetime.now()}")
 
     # 0. 活动横幅检查模式
     if args.check_banner:

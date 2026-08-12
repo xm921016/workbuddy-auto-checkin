@@ -2,8 +2,9 @@ name: WorkBuddy Daily Check-in
 
 on:
   schedule:
-    # 每天 09:10 北京时间 (UTC+8) 运行 -> UTC 01:10
-    - cron: '10 1 * * *'
+    # 每天 01:30 北京时间 (UTC+8) 运行 -> UTC 17:30
+    # 参考同账号私有免费仓库（贴吧/网易云项目）实测：凌晨时段触发稳定，仅延迟大
+    - cron: '30 17 * * *'
   workflow_dispatch:   # 允许手动触发
 
 jobs:
@@ -24,9 +25,18 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      # 恢复 refresh token 缓存（自动续期用；首次运行无缓存时跳过）
+      - name: Restore refresh token cache
+        id: restore-refresh
+        uses: actions/cache/restore@v4
+        with:
+          path: .refresh_token
+          key: wb-refresh-token-v1
+
       - name: Run check-in
         env:
           WB_ACCESS_TOKEN: ${{ secrets.WB_ACCESS_TOKEN }}
+          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
           WB_USER_ID: ${{ secrets.WB_USER_ID }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -40,6 +50,7 @@ jobs:
         if: always()   # 即使签到步骤失败也继续监控
         env:
           WB_ACCESS_TOKEN: ${{ secrets.WB_ACCESS_TOKEN }}
+          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
           WB_USER_ID: ${{ secrets.WB_USER_ID }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -47,6 +58,15 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python workbuddy_checkin.py --check-banner
+
+      # 保存最新的 refresh token（轮换后持久化，供下次运行续期）
+      - name: Save refresh token cache
+        if: always()
+        continue-on-error: true   # 缓存更新失败不阻断主流程（下次回退到 Secret 值）
+        uses: actions/cache/save@v4
+        with:
+          path: .refresh_token
+          key: wb-refresh-token-v1
 
       # 把最新的 banner 状态提交回仓库（去重基准），无变化则不产生新提交
       - name: Persist banner state

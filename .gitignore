@@ -8,6 +8,8 @@ __pycache__/
 *.log
 checkin_log.jsonl
 logs/
+# refresh token 缓存（云端工作区临时文件，绝不入库）
+.refresh_token
 # banner 状态需入库持久化（云端去重用），不再忽略
 
 # 本地配置（含 SMTP 密码，绝不入库）

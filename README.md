@@ -35,7 +35,8 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 | Secret | 说明 |
 |---|---|
-| `WB_ACCESS_TOKEN` | 登录 accessToken（从本地 auth 文件获取） |
+| `WB_ACCESS_TOKEN` | 登录 accessToken（从本地 auth 文件获取，**有 WB_REFRESH_TOKEN 时可不更新**） |
+| `WB_REFRESH_TOKEN` | 刷新令牌（从本地 auth 文件获取，用于**自动续期**，强烈建议配置） |
 | `WB_USER_ID` | 用户 uid（可选） |
 | `SMTP_HOST` | SMTP 服务器（如 smtp.qq.com） |
 | `SMTP_PORT` | SMTP 端口（如 465） |
@@ -43,7 +44,9 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 | `SMTP_PASS` | 发件邮箱授权码（非登录密码） |
 | `MAIL_TO` | 收件邮箱 |
 
-默认每天 09:10（北京时间）自动运行，每次执行两步：
+> **自动续期原理**：脚本每天运行时若检测到 `WB_REFRESH_TOKEN`，会调用 `POST /v2/plugin/auth/token/refresh` 换取新的 accessToken（有效期 60 天）和新的 refreshToken（有效期 90 天），并自动持久化——**token 永不过期，无需手动更新**。刷新失败时会自动退回 `WB_ACCESS_TOKEN` 并发出「⚠️ Token 即将过期」提醒邮件。
+
+默认每天 01:30（北京时间）自动运行（参考同账号贴吧/网易云项目实测：私有免费仓库凌晨时段定时触发稳定、仅延迟较大），每次执行两步：
 1. **每日签到**：成功不发邮件；未激活/失败时通过 SMTP 发邮件说明原因
 2. **新活动监控**：检查活动横幅，发现新活动或检查异常时发提醒邮件；运行后自动把最新状态提交回仓库 `banner_state.json`（去重基准，避免重复提醒）
 
@@ -82,7 +85,11 @@ python workbuddy_checkin.py --check-banner   # 查活动横幅
 
 ## Token 失效处理
 
-accessToken 有效期约 60 天（示例值至 2026-10-10）。失效后接口返回 401，需要重新从本地登录态文件获取新 token 并更新到 GitHub Secrets：
-1. 打开 WorkBuddy 客户端确认已登录
-2. 读取 `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info` 中的 `auth.accessToken`
-3. 更新仓库 Secret `WB_ACCESS_TOKEN`
+**配置了 `WB_REFRESH_TOKEN` 后无需处理**——脚本每天自动续期，token 不会过期。
+
+仅当**自动续期失效**（例如 refresh token 也失效，需重新登录）时：
+1. 打开 WorkBuddy 客户端确认已登录（会自动刷新本地会话）
+2. 从 `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info` 读取新的 `auth.refreshToken`
+3. 更新仓库 Secret `WB_REFRESH_TOKEN`（和 `WB_ACCESS_TOKEN`）
+
+此时云端会自动检测并发送「⚠️ Token 即将过期」提醒邮件。
