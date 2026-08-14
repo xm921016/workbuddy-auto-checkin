@@ -120,13 +120,21 @@ def check_banner(token, uid):
             except Exception:
                 last = {}
         last_id = str(last.get("activity_id", "") or "")
+        last_content = str(last.get("banner_content", "") or "")
         # 更新状态
         state = {"activity_id": activity_id, "banner_content": content,
                  "action": action, "checked_at": datetime.datetime.now().isoformat()}
         with open(BANNER_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-        if not activity_id or activity_id == last_id:
+        if not activity_id:
+            log("banner 无活动 ID")
+            return False, None
+        if activity_id == last_id and content == last_content:
             log(f"banner 无新活动（当前: {content[:40] or '(空)'}）")
+            return False, None
+        if content == last_content:
+            # ID 变了但内容相同（横幅重建等），只更新状态不打扰
+            log(f"banner ID 变化但内容相同，仅更新状态不提醒（{content[:40]}）")
             return False, None
         log(f"发现新活动横幅: {content}")
         return True, info
