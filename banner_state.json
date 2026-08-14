@@ -1,10 +1,10 @@
 {
   "activity_id": "2087741851802054656",
-  "banner_content": "Hy3限免加推至8月31日！每日享0积分免费额度，夜间用更畅快",
+  "banner_content": "与好友分享 WorkBuddy，最高得 650 积分/人 🎁",
   "action": {
-    "type": "switch_model",
-    "label": "免费体验",
-    "model_id": "hy3"
+    "type": "open_url",
+    "label": "查看详细",
+    "fallback_url": "https://www.codebuddy.cn/events/invite/?fromSource=gwzcw.14801220.14801220.14801220&utm_medium=cpc&utm_id=gwzcw.14801220.14801220.14801220"
   },
-  "checked_at": "2026-08-13T18:25:20.294473"
+  "checked_at": "2026-08-14T18:15:12.777575"
 }
