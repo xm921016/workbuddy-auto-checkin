@@ -119,22 +119,32 @@ def check_banner(token, uid):
                     last = json.load(f)
             except Exception:
                 last = {}
-        last_id = str(last.get("activity_id", "") or "")
-        last_content = str(last.get("banner_content", "") or "")
+        # 历史去重：banner 接口会在多个活动间轮换（如 Hy3限免 <-> 分享活动），
+        # 只对【从未提醒过的内容】提醒一次，避免轮换导致每天重复发邮件
+        seen = last.get("seen_content", [])
+        if not isinstance(seen, list):
+            seen = []
+        if "seen_content" not in last:
+            # 迁移：把当前内容与上次记录内容都视为已提醒过，避免改版后首次运行误报
+            seen = [content] if content else []
+            prev = str(last.get("banner_content", "") or "")
+            if prev and prev != content:
+                seen.append(prev)
+        notified = content in seen
+        # 无论是否提醒，都把当前内容并入历史
+        if content and content not in seen:
+            seen.append(content)
         # 更新状态
         state = {"activity_id": activity_id, "banner_content": content,
-                 "action": action, "checked_at": datetime.datetime.now().isoformat()}
+                 "action": action, "checked_at": datetime.datetime.now().isoformat(),
+                 "seen_content": seen}
         with open(BANNER_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-        if not activity_id:
-            log("banner 无活动 ID")
+        if not content:
+            log("banner 无内容")
             return False, None
-        if activity_id == last_id and content == last_content:
-            log(f"banner 无新活动（当前: {content[:40] or '(空)'}）")
-            return False, None
-        if content == last_content:
-            # ID 变了但内容相同（横幅重建等），只更新状态不打扰
-            log(f"banner ID 变化但内容相同，仅更新状态不提醒（{content[:40]}）")
+        if notified:
+            log(f"banner 内容已提醒过，跳过（{content[:40]}）")
             return False, None
         log(f"发现新活动横幅: {content}")
         return True, info
