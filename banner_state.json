@@ -1,10 +1,15 @@
 {
-  "activity_id": "2087741851802054656",
-  "banner_content": "Hy3限免加推至8月31日！每日享0积分免费额度，夜间用更畅快",
+  "activity_id": "2087532144054087680",
+  "banner_content": "工作台模板大赛开启！秀出你的专属工作台创意，有效投稿赢积分！",
   "action": {
-    "type": "switch_model",
-    "label": "免费体验",
-    "model_id": "hy3"
+    "type": "open_url",
+    "label": "查看详情",
+    "fallback_url": "https://www.workbuddy.link/p/LpW8we9wQ4oxDpPACkP6Zb"
   },
-  "checked_at": "2026-08-15T17:43:55.888716"
+  "checked_at": "2026-08-20T17:55:30.829231",
+  "seen_content": [
+    "与好友分享 WorkBuddy，最高得 650 积分/人 🎁",
+    "Hy3限免加推至8月31日！每日享0积分免费额度，夜间用更畅快",
+    "工作台模板大赛开启！秀出你的专属工作台创意，有效投稿赢积分！"
+  ]
 }
