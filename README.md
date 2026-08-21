@@ -29,7 +29,7 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 ## GitHub Actions 云端运行
 
-**本地零文件、零定时任务**：签到与新活动监控全部由 GitHub Actions 云端完成，邮件由云端通过 SMTP 直接发送。
+**本地零文件、零定时任务**：每日签到由 GitHub Actions 云端完成，邮件由云端通过 SMTP 直接发送。
 
 仓库需配置以下 Secrets（**token 绝不进代码仓库**）：
 
@@ -46,33 +46,22 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 > **自动续期原理**：脚本每天运行时若检测到 `WB_REFRESH_TOKEN`，会调用 `POST /v2/plugin/auth/token/refresh` 换取新的 accessToken（有效期 60 天）和新的 refreshToken（有效期 90 天），并自动持久化——**token 永不过期，无需手动更新**。刷新失败时会自动退回 `WB_ACCESS_TOKEN` 并发出「⚠️ Token 即将过期」提醒邮件。
 
-默认每天 01:30（北京时间）自动运行（参考同账号贴吧/网易云项目实测：私有免费仓库凌晨时段定时触发稳定、仅延迟较大），每次执行两步：
-1. **每日签到**：成功不发邮件；未激活/失败时通过 SMTP 发邮件说明原因
-2. **新活动监控**：检查活动横幅，发现新活动或检查异常时发提醒邮件；运行后自动把最新状态提交回仓库 `banner_state.json`（去重基准，避免重复提醒）
+默认每天 01:30（北京时间）自动运行（参考同账号贴吧/网易云项目实测：私有免费仓库凌晨时段定时触发稳定、仅延迟较大），每次执行：
+
+**每日签到**：成功不发邮件；未激活/失败时通过 SMTP 发邮件说明原因。**不发送任何活动推广类邮件。**
 
 可在 Actions 页面手动触发（workflow_dispatch）。
 
 ## 邮件通知规则
 
-**所有邮件由云端（GitHub Actions）通过 SMTP 直接发送，本地不运行任何东西。**
-
-**签到检查**（`python workbuddy_checkin.py`）：
+**所有邮件由云端（GitHub Actions）通过 SMTP 直接发送，本地不运行任何东西。只发送签到状态相关邮件，不发送活动广告。**
 
 | 当天情况 | 邮件行为 |
 |---|---|
 | 已成功签到 | 不发邮件 |
 | 签到活动未激活（active=false） | 发「ℹ️ 今日活动未激活」说明邮件 |
 | 查询状态异常 / 领取异常 | 发「⚠️ 签到失败」告警邮件（含原因） |
-
-**新活动监控**（`python workbuddy_checkin.py --check-banner`）：
-
-| 退出码 | 含义 | 邮件行为 |
-|---|---|---|
-| 10 | 发现新活动横幅 | 发「🎉 新活动提醒」邮件（含活动内容/类型/链接） |
-| 0 | 无新活动 | 不发邮件 |
-| 2 或其他 | 检查异常 | 发「⚠️ 活动监控异常」邮件 |
-
-banner 状态记录在仓库 `banner_state.json`（由 workflow 每次运行后自动提交更新），只有 activity_id 变化才触发提醒，避免重复邮件。
+| token 即将过期（≤7 天） | 发「⚠️ Token 即将过期」提醒邮件（自动续期失效时才出现） |
 
 ## 本地手动运行（可选）
 
@@ -80,7 +69,6 @@ banner 状态记录在仓库 `banner_state.json`（由 workflow 每次运行后�
 
 ```bash
 python workbuddy_checkin.py --check-only     # 只查签到状态
-python workbuddy_checkin.py --check-banner   # 查活动横幅
 ```
 
 ## Token 失效处理

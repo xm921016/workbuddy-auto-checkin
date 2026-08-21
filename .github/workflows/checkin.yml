@@ -11,8 +11,6 @@ jobs:
   checkin:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write   # 需要把 banner_state.json 提交回仓库以持久化状态
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,23 +43,6 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python workbuddy_checkin.py
 
-      # 新活动监控：检查 banner 是否有变化（新活动/异常时脚本自行通过 SMTP 发邮件）
-      # continue-on-error: 脚本用退出码 10=新活动 / 2=异常 表达状态，邮件已由脚本发出，
-      # 不应因退出码让整个任务显示为失败
-      - name: Check banner for new activities
-        if: always()   # 即使签到步骤失败也继续监控
-        continue-on-error: true
-        env:
-          WB_ACCESS_TOKEN: ${{ secrets.WB_ACCESS_TOKEN }}
-          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
-          WB_USER_ID: ${{ secrets.WB_USER_ID }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          MAIL_TO: ${{ secrets.MAIL_TO }}
-        run: python workbuddy_checkin.py --check-banner
-
       # 保存最新的 refresh token（轮换后持久化，供下次运行续期）
       - name: Save refresh token cache
         if: always()
@@ -70,16 +51,3 @@ jobs:
         with:
           path: .refresh_token
           key: wb-refresh-token-v1
-
-      # 把最新的 banner 状态提交回仓库（去重基准），无变化则不产生新提交
-      - name: Persist banner state
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add banner_state.json
-          git diff --cached --quiet || {
-            git commit -m "chore: 更新 banner 状态 [skip ci]"
-            git push
-          }
-          echo "banner state persisted"

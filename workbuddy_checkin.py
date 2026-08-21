@@ -375,19 +375,16 @@ def main():
                        f"当前 token 到期时间: {datetime.datetime.fromtimestamp(exp).strftime('%Y-%m-%d %H:%M')}\n"
                        f"发送时间: {datetime.datetime.now()}")
 
-    # 0. 活动横幅检查模式
+    # 0. 活动横幅检查模式（已按用户要求静默：不再发送任何邮件，仅记录）
     if args.check_banner:
         new_activity, info = check_banner(token, uid)
         if new_activity is None:
-            log("banner 检查异常")
+            log("banner 检查异常（静默，不发送邮件）")
             append_log({"event": "banner_error", "ok": False, "msg": info})
-            send_email("⚠️ WorkBuddy 活动监控异常",
-                       f"检查活动横幅时发生异常:\n{info}\n时间: {datetime.datetime.now()}")
             sys.exit(2)
         if new_activity:
             print(f"NEW_ACTIVITY: {json.dumps(info, ensure_ascii=False)}", flush=True)
             append_log({"event": "banner_new", "ok": True, "info": info})
-            send_email("🎉 WorkBuddy 新活动提醒", build_banner_email_body(info))
             sys.exit(10)  # 10 = 发现新活动
         append_log({"event": "banner_nochange", "ok": True})
         sys.exit(0)
