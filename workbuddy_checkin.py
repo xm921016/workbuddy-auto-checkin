@@ -62,10 +62,12 @@ def log(msg):
     print(f"[{ts}] {msg}", flush=True)
 
 
-def append_log(record: dict):
+def append_log(record: dict, account=None):
     """追加一条 JSONL 日志"""
     try:
         record["ts"] = datetime.datetime.now().isoformat()
+        if account:
+            record["account"] = account
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as e:
@@ -221,26 +223,29 @@ def try_refresh_token(refresh_tok, uid):
     return True, body["data"]
 
 
-def load_refresh_token():
-    """读取 refresh token：缓存文件优先，其次环境变量 WB_REFRESH_TOKEN。返回 (token, source)"""
-    if os.path.exists(REFRESH_TOKEN_FILE):
+def load_refresh_token(prefix=""):
+    """读取 refresh token：缓存文件优先，其次环境变量 WB_REFRESH_TOKEN{prefix}。返回 (token, source)
+    prefix: 空=账号1，"_2"/"_3"=第2/3个账号（对应 WB_REFRESH_TOKEN_2 等）"""
+    cache_file = REFRESH_TOKEN_FILE + prefix  # .refresh_token / .refresh_token_2 ...
+    if os.path.exists(cache_file):
         try:
-            with open(REFRESH_TOKEN_FILE, "r", encoding="utf-8") as f:
+            with open(cache_file, "r", encoding="utf-8") as f:
                 tok = f.read().strip()
             if tok:
                 return tok, "cache"
         except Exception:
             pass
-    tok = os.environ.get("WB_REFRESH_TOKEN", "").strip()
+    tok = os.environ.get(f"WB_REFRESH_TOKEN{prefix}", "").strip()
     if tok:
         return tok, "env"
     return "", ""
 
 
-def save_refresh_token(tok):
+def save_refresh_token(tok, prefix=""):
     """持久化最新 refresh token（供云端缓存、下次运行使用）"""
+    cache_file = REFRESH_TOKEN_FILE + prefix
     try:
-        with open(REFRESH_TOKEN_FILE, "w", encoding="utf-8") as f:
+        with open(cache_file, "w", encoding="utf-8") as f:
             f.write(tok)
         return True
     except Exception as e:
@@ -248,40 +253,42 @@ def save_refresh_token(tok):
         return False
 
 
-def get_access_token():
+def get_access_token(prefix=""):
     """
     获取有效 access token（自动续期优先）：
     1. 有 refresh token -> 调用刷新接口换新 access token（并持久化新的 refresh token）
-    2. 刷新失败或没有 refresh token -> 退回 WB_ACCESS_TOKEN / 本地登录态文件
+    2. 刷新失败或没有 refresh token -> 退回 WB_ACCESS_TOKEN{prefix} / 本地登录态文件
     返回 (token, uid, source)
+    prefix: 空=账号1，"_2"/"_3"=第2/3个账号
     """
-    refresh_tok, rt_source = load_refresh_token()
+    account_label = ("账号1" if not prefix else "账号" + prefix.lstrip("_"))
+    refresh_tok, rt_source = load_refresh_token(prefix)
     if refresh_tok:
-        uid = os.environ.get("WB_USER_ID", "").strip()
+        uid = os.environ.get(f"WB_USER_ID{prefix}", "").strip()
         ok, result = try_refresh_token(refresh_tok, uid)
         if ok:
             new_access = result.get("accessToken", "")
             new_refresh = result.get("refreshToken", "")
             if new_refresh:
-                save_refresh_token(new_refresh)
+                save_refresh_token(new_refresh, prefix)
             if new_access:
                 days = (result.get("refreshExpiresIn") or 0) // 86400
-                log(f"✅ token 自动续期成功（来源 {rt_source}，新 refresh 有效期约 {days} 天）")
+                log(f"✅ [{account_label}] token 自动续期成功（来源 {rt_source}，新 refresh 有效期约 {days} 天）")
                 return new_access, uid, "refresh"
         else:
-            log(f"WARN token 自动续期失败（来源 {rt_source}）: {result}")
-    # 退回原逻辑（环境变量 WB_ACCESS_TOKEN 或本地登录态）
-    return get_token()
+            log(f"WARN [{account_label}] token 自动续期失败（来源 {rt_source}）: {result}")
+    # 退回原逻辑（环境变量 WB_ACCESS_TOKEN{prefix} 或本地登录态）
+    return get_token(prefix)
 
 
-def get_token():
-    """获取 token：环境变量优先，其次本地登录态文件"""
-    token = os.environ.get("WB_ACCESS_TOKEN", "").strip()
-    uid = os.environ.get("WB_USER_ID", "").strip()
+def get_token(prefix=""):
+    """获取 token：环境变量优先，其次本地登录态文件（本地登录态仅账号1使用）"""
+    token = os.environ.get(f"WB_ACCESS_TOKEN{prefix}", "").strip()
+    uid = os.environ.get(f"WB_USER_ID{prefix}", "").strip()
     if token:
-        return token, uid, "env"
+        return token, uid, "env" + (prefix or "")
 
-    if os.path.exists(LOCAL_AUTH_FILE):
+    if not prefix and os.path.exists(LOCAL_AUTH_FILE):
         try:
             with open(LOCAL_AUTH_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -316,8 +323,10 @@ def api_post(path, token, uid, payload=None, timeout=20):
     return resp.status_code, body
 
 
-def send_email(subject, body, config=None):
+def send_email(subject, body, config=None, account_label=None):
     """通过 SMTP 发送邮件（失败不抛异常，只记录）"""
+    if account_label:
+        subject = f"[{account_label}] {subject}"
     cfg = config or {}
     host = cfg.get("smtp_host") or os.environ.get("SMTP_HOST", "")
     user = cfg.get("smtp_user") or os.environ.get("SMTP_USER", "")
@@ -347,17 +356,12 @@ def send_email(subject, body, config=None):
         return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="WorkBuddy 每日自动签到")
-    parser.add_argument("--check-only", action="store_true", help="只查询签到状态，不领取")
-    parser.add_argument("--check-banner", action="store_true", help="检查活动横幅是否有新活动（不领取）")
-    args = parser.parse_args()
-
-    token, uid, source = get_access_token()
-    if not token:
-        log("ERROR 未找到 token（自动续期失败且 WB_ACCESS_TOKEN/本地登录态均无）")
-        append_log({"event": "no_token", "ok": False, "msg": "no token found"})
-        sys.exit(1)
+def process_account(args, token, uid, source, account_label="账号1"):
+    """
+    对单个账号执行签到主流程。返回 0=成功/正常跳过，非0=失败。
+    banner 检查只在账号1执行（banner 状态全局共享）。
+    """
+    log(f"===== [{account_label}] 开始签到 =====")
     log(f"token 来源: {source} | uid: {uid or '(未提供)'}")
 
     # token 到期兜底提醒：自动续期正常时新 token 有 60 天，不会触发；仅续期失效/未配置时才提醒
@@ -365,51 +369,41 @@ def main():
     if exp:
         days_left = (exp - int(time.time())) // 86400
         if days_left <= 7:
-            log(f"WARN token 剩余 {days_left} 天，发送到期提醒")
-            append_log({"event": "token_expiring", "ok": True, "days_left": days_left})
+            log(f"WARN [{account_label}] token 剩余 {days_left} 天，发送到期提醒")
+            append_log({"event": "token_expiring", "ok": True, "days_left": days_left}, account=account_label)
             send_email("⚠️ WorkBuddy Token 即将过期",
-                       f"WorkBuddy 登录 token 即将过期（剩余 {days_left} 天）。\n\n"
+                       f"[{account_label}]\nWorkBuddy 登录 token 即将过期（剩余 {days_left} 天）。\n\n"
                        f"自动续期未能完成或未启用。解决办法：\n"
                        f"1. 打开 WorkBuddy 客户端确认已登录（会自动刷新本地会话）\n"
                        f"2. 若云端未配置 WB_REFRESH_TOKEN，联系助手更新 GitHub Secret\n\n"
                        f"当前 token 到期时间: {datetime.datetime.fromtimestamp(exp).strftime('%Y-%m-%d %H:%M')}\n"
-                       f"发送时间: {datetime.datetime.now()}")
-
-    # 0. 活动横幅检查模式（已按用户要求静默：不再发送任何邮件，仅记录）
-    if args.check_banner:
-        new_activity, info = check_banner(token, uid)
-        if new_activity is None:
-            log("banner 检查异常（静默，不发送邮件）")
-            append_log({"event": "banner_error", "ok": False, "msg": info})
-            sys.exit(2)
-        if new_activity:
-            print(f"NEW_ACTIVITY: {json.dumps(info, ensure_ascii=False)}", flush=True)
-            append_log({"event": "banner_new", "ok": True, "info": info})
-            sys.exit(10)  # 10 = 发现新活动
-        append_log({"event": "banner_nochange", "ok": True})
-        sys.exit(0)
+                       f"发送时间: {datetime.datetime.now()}",
+                       account_label=account_label)
 
     # 1. 查询签到状态（正确接口：checkin-activity-status；checkin-status 仅作兜底）
     try:
         code, status = api_post("/billing/meter/checkin-activity-status", token, uid)
-        log(f"checkin-activity-status -> HTTP {code}, code={status.get('code')}")
+        log(f"[{account_label}] checkin-activity-status -> HTTP {code}, code={status.get('code')}")
         if code != 200 or status.get("code") != 0:
             # 兜底：尝试旧接口
-            log("WARN 活动接口异常，尝试 checkin-status 兜底")
+            log(f"WARN [{account_label}] 活动接口异常，尝试 checkin-status 兜底")
             code, status = api_post("/billing/meter/checkin-status", token, uid)
-            log(f"checkin-status -> HTTP {code}, code={status.get('code')}")
+            log(f"[{account_label}] checkin-status -> HTTP {code}, code={status.get('code')}")
         if code != 200 or status.get("code") != 0:
-            log(f"ERROR 查询状态失败: {json.dumps(status, ensure_ascii=False)[:300]}")
-            append_log({"event": "status_fail", "ok": False, "msg": status})
+            log(f"ERROR [{account_label}] 查询状态失败: {json.dumps(status, ensure_ascii=False)[:300]}")
+            append_log({"event": "status_fail", "ok": False, "msg": status}, account=account_label)
             send_email("⚠️ WorkBuddy签到失败：查询状态异常",
-                       f"查询签到状态失败\nHTTP {code}\n响应: {json.dumps(status, ensure_ascii=False)[:500]}\n时间: {datetime.datetime.now()}")
-            sys.exit(1)
+                       f"[{account_label}]\n查询签到状态失败\nHTTP {code}\n响应: {json.dumps(status, ensure_ascii=False)[:500]}\n时间: {datetime.datetime.now()}",
+                       account_label=account_label)
+            return 1
         data = status.get("data", {})
     except Exception as e:
-        log(f"ERROR 查询状态异常: {e}")
-        append_log({"event": "status_error", "ok": False, "msg": str(e)})
-        send_email("⚠️ WorkBuddy签到失败：网络异常", f"查询签到状态时发生异常:\n{e}\n时间: {datetime.datetime.now()}")
-        sys.exit(1)
+        log(f"ERROR [{account_label}] 查询状态异常: {e}")
+        append_log({"event": "status_error", "ok": False, "msg": str(e)}, account=account_label)
+        send_email("⚠️ WorkBuddy签到失败：网络异常",
+                   f"[{account_label}]\n查询签到状态时发生异常:\n{e}\n时间: {datetime.datetime.now()}",
+                   account_label=account_label)
+        return 1
 
     # 打印状态摘要
     summary = {
@@ -425,51 +419,126 @@ def main():
         "claim_button_text": data.get("claim_button_text", ""),
         "action_button": data.get("action_button", {}),
     }
-    log("状态摘要: " + json.dumps(summary, ensure_ascii=False))
+    log(f"[{account_label}] 状态摘要: " + json.dumps(summary, ensure_ascii=False))
 
     if args.check_only:
-        log("--check-only 模式，不领取")
-        append_log({"event": "check_only", "ok": True, "summary": summary})
-        sys.exit(0)
+        log(f"[{account_label}] --check-only 模式，不领取")
+        append_log({"event": "check_only", "ok": True, "summary": summary}, account=account_label)
+        return 0
 
     # 2. 判断是否需要领取
     if not data.get("active", False):
-        log("INFO 当前签到活动未激活（active=false），跳过领取")
-        append_log({"event": "inactive", "ok": True, "summary": summary})
+        log(f"INFO [{account_label}] 当前签到活动未激活（active=false），跳过领取")
+        append_log({"event": "inactive", "ok": True, "summary": summary}, account=account_label)
         # 用户要求：没成功签到就发邮件说明原因
         send_email("ℹ️ WorkBuddy 签到：今日活动未激活",
-                   f"今日签到活动当前未激活，未能领取积分。\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}")
-        sys.exit(0)
+                   f"[{account_label}]\n今日签到活动当前未激活，未能领取积分。\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}",
+                   account_label=account_label)
+        return 0
 
     if data.get("today_checked_in", False):
-        log("INFO 今日已签到，无需重复领取")
-        append_log({"event": "already", "ok": True, "summary": summary})
-        sys.exit(0)
+        log(f"INFO [{account_label}] 今日已签到，无需重复领取")
+        append_log({"event": "already", "ok": True, "summary": summary}, account=account_label)
+        return 0
 
     # 3. 执行每日签到
-    log("正在领取每日签到...")
+    log(f"[{account_label}] 正在领取每日签到...")
     try:
         code, result = api_post("/billing/meter/daily-checkin", token, uid)
-        log(f"daily-checkin -> HTTP {code}, code={result.get('code')} msg={result.get('msg')}")
+        log(f"[{account_label}] daily-checkin -> HTTP {code}, code={result.get('code')} msg={result.get('msg')}")
         if code == 200 and result.get("code") == 0:
-            log("✅ 签到成功！")
-            append_log({"event": "success", "ok": True, "data": result.get("data"), "summary": summary})
+            log(f"✅ [{account_label}] 签到成功！")
+            append_log({"event": "success", "ok": True, "data": result.get("data"), "summary": summary}, account=account_label)
             # 用户要求：成功签到不发邮件
-            sys.exit(0)
+            return 0
         else:
             # 已签到/活动未开始等业务错误码
             msg = result.get("msg", "")
-            log(f"INFO 领取未成功(可能已签到或未开放): {msg}")
-            append_log({"event": "claim_skip", "ok": True, "code": result.get("code"), "msg": msg})
+            log(f"INFO [{account_label}] 领取未成功(可能已签到或未开放): {msg}")
+            append_log({"event": "claim_skip", "ok": True, "code": result.get("code"), "msg": msg}, account=account_label)
             # 用户要求：没成功签到就发邮件说明原因
             send_email("⚠️ WorkBuddy 签到：领取未成功",
-                       f"领取每日签到未成功，原因：{msg}\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}")
-            sys.exit(0)
+                       f"[{account_label}]\n领取每日签到未成功，原因：{msg}\n\n状态摘要:\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n\n时间: {datetime.datetime.now()}",
+                       account_label=account_label)
+            return 0
     except Exception as e:
-        log(f"ERROR 领取异常: {e}")
-        append_log({"event": "claim_error", "ok": False, "msg": str(e)})
-        send_email("⚠️ WorkBuddy签到失败：领取异常", f"领取每日签到时发生异常:\n{e}\n时间: {datetime.datetime.now()}")
+        log(f"ERROR [{account_label}] 领取异常: {e}")
+        append_log({"event": "claim_error", "ok": False, "msg": str(e)}, account=account_label)
+        send_email("⚠️ WorkBuddy签到失败：领取异常",
+                   f"[{account_label}]\n领取每日签到时发生异常:\n{e}\n时间: {datetime.datetime.now()}",
+                   account_label=account_label)
+        return 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description="WorkBuddy 每日自动签到（支持多账号）")
+    parser.add_argument("--check-only", action="store_true", help="只查询签到状态，不领取")
+    parser.add_argument("--check-banner", action="store_true", help="检查活动横幅是否有新活动（不领取，仅账号1）")
+    args = parser.parse_args()
+
+    # banner 检查模式：仅账号1执行（banner 状态全局共享，避免多账号互相覆盖）
+    if args.check_banner:
+        token, uid, source = get_access_token()
+        if not token:
+            log("ERROR 未找到 token（自动续期失败且 WB_ACCESS_TOKEN/本地登录态均无）")
+            append_log({"event": "no_token", "ok": False, "msg": "no token found"})
+            sys.exit(1)
+        new_activity, info = check_banner(token, uid)
+        if new_activity is None:
+            log("banner 检查异常（静默，不发送邮件）")
+            append_log({"event": "banner_error", "ok": False, "msg": info})
+            sys.exit(2)
+        if new_activity:
+            print(f"NEW_ACTIVITY: {json.dumps(info, ensure_ascii=False)}", flush=True)
+            append_log({"event": "banner_new", "ok": True, "info": info})
+            sys.exit(10)  # 10 = 发现新活动
+        append_log({"event": "banner_nochange", "ok": True})
+        sys.exit(0)
+
+    # 收集所有账号：(token, uid, source, label)
+    accounts = []
+
+    # 账号1：env WB_ACCESS_TOKEN / WB_REFRESH_TOKEN / 本地登录态
+    token, uid, source = get_access_token()
+    if token:
+        accounts.append((token, uid, source, "账号1"))
+    else:
+        log("WARN 账号1 未找到 token（自动续期失败且 WB_ACCESS_TOKEN/本地登录态均无）")
+        append_log({"event": "no_token", "ok": False, "msg": "account1 no token"})
+
+    # 账号2+：从 WB_ACCESS_TOKEN_N / WB_REFRESH_TOKEN_N 环境变量读取
+    i = 2
+    while True:
+        prefix = f"_{i}"
+        tok_env = os.environ.get(f"WB_ACCESS_TOKEN{prefix}", "").strip()
+        rt_env = os.environ.get(f"WB_REFRESH_TOKEN{prefix}", "").strip()
+        if not tok_env and not rt_env:
+            break
+        tok, uid_n, src = get_access_token(prefix)
+        if tok:
+            accounts.append((tok, uid_n, src, f"账号{i}"))
+        else:
+            log(f"WARN 账号{i} 未找到 token（环境变量已配置但获取失败）")
+            append_log({"event": "no_token", "ok": False, "msg": f"account{i} no token"})
+        i += 1
+
+    if not accounts:
+        log("ERROR 没有任何账号可签到")
         sys.exit(1)
+
+    log(f"共 {len(accounts)} 个账号参与签到: " + ", ".join(l for _, _, _, l in accounts))
+
+    # 逐个账号签到，汇总失败结果（任一账号失败则整体失败，便于 Actions 显示/告警）
+    fail = 0
+    for token, uid, source, label in accounts:
+        rc = process_account(args, token, uid, source, label)
+        log(f"===== [{label}] 结束 (rc={rc}) =====")
+        fail += 1 if rc != 0 else 0
+
+    if fail:
+        log(f"ERROR {fail} 个账号签到失败")
+        sys.exit(1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

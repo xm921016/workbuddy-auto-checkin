@@ -35,14 +35,22 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 | Secret | 说明 |
 |---|---|
-| `WB_ACCESS_TOKEN` | 登录 accessToken（从本地 auth 文件获取，**有 WB_REFRESH_TOKEN 时可不更新**） |
-| `WB_REFRESH_TOKEN` | 刷新令牌（从本地 auth 文件获取，用于**自动续期**，强烈建议配置） |
-| `WB_USER_ID` | 用户 uid（可选） |
+| `WB_ACCESS_TOKEN` | 账号1 登录 accessToken（从本地 auth 文件获取，**有 WB_REFRESH_TOKEN 时可不更新**） |
+| `WB_REFRESH_TOKEN` | 账号1 刷新令牌（从本地 auth 文件获取，用于**自动续期**，强烈建议配置） |
+| `WB_USER_ID` | 账号1 用户 uid（可选） |
+| `WB_ACCESS_TOKEN_2` | **账号2** 登录 accessToken（多账号签到，可选） |
+| `WB_REFRESH_TOKEN_2` | **账号2** 刷新令牌（多账号签到，可选） |
+| `WB_USER_ID_2` | **账号2** 用户 uid（可选） |
 | `SMTP_HOST` | SMTP 服务器（如 smtp.qq.com） |
 | `SMTP_PORT` | SMTP 端口（如 465） |
 | `SMTP_USER` | 发件邮箱账号 |
 | `SMTP_PASS` | 发件邮箱授权码（非登录密码） |
 | `MAIL_TO` | 收件邮箱 |
+
+> 多账号签到：脚本会依次处理账号1（`WB_ACCESS_TOKEN`/本地登录态）和账号2（`WB_ACCESS_TOKEN_2`），
+> 每个账号使用独立的 refresh token 缓存（`.refresh_token` / `.refresh_token_2`），互不干扰。
+> 邮件主题会带 `[账号N]` 前缀，方便区分是哪个账号的提醒。
+> 如需第 3、4 个账号，照此规则添加 `WB_ACCESS_TOKEN_3`、`WB_REFRESH_TOKEN_3` 等即可（脚本自动发现）。
 
 > **自动续期原理**：脚本每天运行时若检测到 `WB_REFRESH_TOKEN`，会调用 `POST /v2/plugin/auth/token/refresh` 换取新的 accessToken（有效期 60 天）和新的 refreshToken（有效期 90 天），并自动持久化——**token 永不过期，无需手动更新**。刷新失败时会自动退回 `WB_ACCESS_TOKEN` 并发出「⚠️ Token 即将过期」提醒邮件。
 
