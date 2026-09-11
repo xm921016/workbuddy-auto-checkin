@@ -53,6 +53,13 @@ jobs:
           path: .refresh_token_4
           key: wb-refresh-token-v1-4
 
+      - name: Restore refresh token cache (account5)
+        id: restore-refresh-5
+        uses: actions/cache/restore@v4
+        with:
+          path: .refresh_token_5
+          key: wb-refresh-token-v1-5
+
       - name: Run check-in
         env:
           # 账号1（原有）
@@ -67,10 +74,14 @@ jobs:
           WB_ACCESS_TOKEN_3: ${{ secrets.WB_ACCESS_TOKEN_3 }}
           WB_REFRESH_TOKEN_3: ${{ secrets.WB_REFRESH_TOKEN_3 }}
           WB_USER_ID_3: ${{ secrets.WB_USER_ID_3 }}
-          # 账号4（本机当前登录账号 Estrella）
+          # 账号4（Estrella / 15123972125）
           WB_ACCESS_TOKEN_4: ${{ secrets.WB_ACCESS_TOKEN_4 }}
           WB_REFRESH_TOKEN_4: ${{ secrets.WB_REFRESH_TOKEN_4 }}
           WB_USER_ID_4: ${{ secrets.WB_USER_ID_4 }}
+          # 账号5（本机当前登录账号 15803022198）
+          WB_ACCESS_TOKEN_5: ${{ secrets.WB_ACCESS_TOKEN_5 }}
+          WB_REFRESH_TOKEN_5: ${{ secrets.WB_REFRESH_TOKEN_5 }}
+          WB_USER_ID_5: ${{ secrets.WB_USER_ID_5 }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -110,3 +121,11 @@ jobs:
         with:
           path: .refresh_token_4
           key: wb-refresh-token-v1-4
+
+      - name: Save refresh token cache (account5)
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .refresh_token_5
+          key: wb-refresh-token-v1-5

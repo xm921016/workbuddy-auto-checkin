@@ -38,9 +38,9 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 | `WB_ACCESS_TOKEN` | 账号1 登录 accessToken（从本地 auth 文件获取，**有 WB_REFRESH_TOKEN 时可不更新**） |
 | `WB_REFRESH_TOKEN` | 账号1 刷新令牌（从本地 auth 文件获取，用于**自动续期**，强烈建议配置） |
 | `WB_USER_ID` | 账号1 用户 uid（可选） |
-| `WB_ACCESS_TOKEN_2` / `_3` / `_4` | **账号2/3/4** 登录 accessToken（多账号签到，可选） |
-| `WB_REFRESH_TOKEN_2` / `_3` / `_4` | **账号2/3/4** 刷新令牌（多账号签到，可选） |
-| `WB_USER_ID_2` / `_3` / `_4` | **账号2/3/4** 用户 uid（可选） |
+| `WB_ACCESS_TOKEN_2` / `_3` / `_4` / `_5` | **账号2/3/4/5** 登录 accessToken（多账号签到，可选） |
+| `WB_REFRESH_TOKEN_2` / `_3` / `_4` / `_5` | **账号2/3/4/5** 刷新令牌（多账号签到，可选） |
+| `WB_USER_ID_2` / `_3` / `_4` / `_5` | **账号2/3/4/5** 用户 uid（可选） |
 | `SMTP_HOST` | SMTP 服务器（如 smtp.qq.com） |
 | `SMTP_PORT` | SMTP 端口（如 465） |
 | `SMTP_USER` | 发件邮箱账号 |
@@ -48,8 +48,8 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 | `MAIL_TO` | 收件邮箱 |
 
 > 多账号签到：脚本会依次处理账号1（`WB_ACCESS_TOKEN`/本地登录态）、账号2（`WB_ACCESS_TOKEN_2`）、
-> 账号3（`_3`）、账号4（`_4`）……脚本从 2 开始自动发现连续编号，配到第几个就签几个。
-> 每个账号使用独立的 refresh token 缓存（`.refresh_token` / `_2` / `_3` / `_4`），互不干扰。
+> 账号3（`_3`）、账号4（`_4`）、账号5（`_5`）……脚本从 2 开始自动发现连续编号，配到第几个就签几个。
+> 每个账号使用独立的 refresh token 缓存（`.refresh_token` / `_2` / `_3` / `_4` / `_5`），互不干扰。
 > 邮件主题会带 `[账号N]` 前缀，方便区分是哪个账号的提醒。
 > 新增第 N 个账号：① 上传 `WB_ACCESS_TOKEN_N`/`WB_REFRESH_TOKEN_N`/`WB_USER_ID_N` 三个 Secrets
 > ② 在 `.github/workflows/checkin.yml` 里补上对应的 env 映射和 refresh 缓存 restore/save 步骤
