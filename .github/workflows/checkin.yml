@@ -24,41 +24,54 @@ jobs:
         run: pip install requests
 
       # 恢复 refresh token 缓存（自动续期用；首次运行无缓存时跳过）
-      # 每个账号使用独立缓存 key（.refresh_token / _2 / _3 / _4 …），互不干扰
+      # 每个账号使用独立的 key 命名空间（wb-rt-a1- / a2- / a3- …），互不干扰。
+      # 注意：Actions 缓存 key 一旦写入就不可覆盖，所以 save 必须用「每次运行都不同」的
+      # key（run_id+run_attempt），再用 restore-keys 前缀取回最近一次，否则轮换后的
+      # 新 refresh token 永远存不进去（历史上一直是这样，缓存停在首次创建时间）。
       - name: Restore refresh token cache (account1)
         id: restore-refresh
         uses: actions/cache/restore@v4
         with:
           path: .refresh_token
-          key: wb-refresh-token-v1
+          key: wb-rt-a1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a1-
 
       - name: Restore refresh token cache (account2)
         id: restore-refresh-2
         uses: actions/cache/restore@v4
         with:
           path: .refresh_token_2
-          key: wb-refresh-token-v1-2
+          key: wb-rt-a2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a2-
 
       - name: Restore refresh token cache (account3)
         id: restore-refresh-3
         uses: actions/cache/restore@v4
         with:
           path: .refresh_token_3
-          key: wb-refresh-token-v1-3
+          key: wb-rt-a3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a3-
 
       - name: Restore refresh token cache (account4)
         id: restore-refresh-4
         uses: actions/cache/restore@v4
         with:
           path: .refresh_token_4
-          key: wb-refresh-token-v1-4
+          key: wb-rt-a4-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a4-
 
       - name: Restore refresh token cache (account5)
         id: restore-refresh-5
         uses: actions/cache/restore@v4
         with:
           path: .refresh_token_5
-          key: wb-refresh-token-v1-5
+          key: wb-rt-a5-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a5-
 
       - name: Run check-in
         env:
@@ -90,13 +103,14 @@ jobs:
         run: python workbuddy_checkin.py
 
       # 保存最新的 refresh token（轮换后持久化，供下次运行续期）
+      # key 带 run_id/run_attempt，保证每次都能写入新缓存（旧 key 不可覆盖）
       - name: Save refresh token cache (account1)
         if: always()
         continue-on-error: true   # 缓存更新失败不阻断主流程（下次回退到 Secret 值）
         uses: actions/cache/save@v4
         with:
           path: .refresh_token
-          key: wb-refresh-token-v1
+          key: wb-rt-a1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save refresh token cache (account2)
         if: always()
@@ -104,7 +118,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .refresh_token_2
-          key: wb-refresh-token-v1-2
+          key: wb-rt-a2-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save refresh token cache (account3)
         if: always()
@@ -112,7 +126,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .refresh_token_3
-          key: wb-refresh-token-v1-3
+          key: wb-rt-a3-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save refresh token cache (account4)
         if: always()
@@ -120,7 +134,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .refresh_token_4
-          key: wb-refresh-token-v1-4
+          key: wb-rt-a4-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save refresh token cache (account5)
         if: always()
@@ -128,4 +142,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .refresh_token_5
-          key: wb-refresh-token-v1-5
+          key: wb-rt-a5-${{ github.run_id }}-${{ github.run_attempt }}
