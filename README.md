@@ -63,6 +63,17 @@ python workbuddy_checkin.py --check-only   # 只查询不领取
 
 可在 Actions 页面手动触发（workflow_dispatch）。
 
+## 运营约定与变更记录
+
+> 换电脑 / 新会话接手时先读这里，携号信息见根目录 `accounts_notes.md`（手机号已脱敏），完整手机号与余额只在本地 `_research/accounts.json`。
+
+- **仓库已转 public（2026-11-20）**：公开仓 Actions 分钟免费不限量，token 在 Secrets 里不受影响（API 读不回、日志自动打码）；因此不需要多仓库轮值分流额度。
+- **当天新增的账号必须先立即自动签到一次**（`add_account.py` 第 5 步）：不能只登记配置等第二天定时，要确保新号当天签到拿到积分、`rc=0` 才算添加完成。
+- **部署环境**：本机账户为 `Administrator`（非 `xuming`），Python venv 在 `C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe`。
+- **本地不设定时任务**：所有自动化都在 GitHub Actions；git 推送不加代理参数、不加 `-c http.sslBackend=openssl`。
+- 当前共 **10 个账号**参与签到（2026-11-20）。
+
+
 ## 邮件通知规则
 
 **所有邮件由云端（GitHub Actions）通过 SMTP 直接发送，本地不运行任何东西。只发送签到状态相关邮件，不发送活动广告。**
