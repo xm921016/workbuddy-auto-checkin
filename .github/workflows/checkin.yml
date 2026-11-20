@@ -118,6 +118,15 @@ jobs:
           restore-keys: |
             wb-rt-a10-
 
+      - name: Restore refresh token cache (account11)
+        id: restore-refresh-11
+        uses: actions/cache/restore@v4
+        with:
+          path: .refresh_token_11
+          key: wb-rt-a11-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wb-rt-a11-
+
       - name: Run check-in
         env:
           # 账号1（原有）
@@ -160,6 +169,10 @@ jobs:
           WB_ACCESS_TOKEN_10: ${{ secrets.WB_ACCESS_TOKEN_10 }}
           WB_REFRESH_TOKEN_10: ${{ secrets.WB_REFRESH_TOKEN_10 }}
           WB_USER_ID_10: ${{ secrets.WB_USER_ID_10 }}
+          # 账号11（本机当前登录账号 18323403909）
+          WB_ACCESS_TOKEN_11: ${{ secrets.WB_ACCESS_TOKEN_11 }}
+          WB_REFRESH_TOKEN_11: ${{ secrets.WB_REFRESH_TOKEN_11 }}
+          WB_USER_ID_11: ${{ secrets.WB_USER_ID_11 }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -248,3 +261,11 @@ jobs:
         with:
           path: .refresh_token_10
           key: wb-rt-a10-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save refresh token cache (account11)
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .refresh_token_11
+          key: wb-rt-a11-${{ github.run_id }}-${{ github.run_attempt }}
